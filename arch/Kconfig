@@ -1289,6 +1289,7 @@ config ARCH_HAS_PARANOID_L1D_FLUSH
 	bool
 
 source "kernel/gcov/Kconfig"
+source "kernel/pgo/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"
 
