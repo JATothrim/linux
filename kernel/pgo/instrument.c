@@ -100,7 +100,7 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 		return;
 
 	counters = (struct llvm_prf_value_node **)p->values;
-	curr = counters[index];
+	curr = READ_ONCE(counters[index]);
 
 	while (curr) {
 		if (target_value == curr->value) {
@@ -114,7 +114,7 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 		}
 
 		prev = curr;
-		curr = curr->next;
+		curr = READ_ONCE(curr->next);
 		values++;
 	}
 
@@ -140,9 +140,9 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 	curr->count++;
 
 	if (!counters[index])
-		counters[index] = curr;
+		WRITE_ONCE(counters[index], curr);
 	else if (prev && !prev->next)
-		prev->next = curr;
+		WRITE_ONCE(prev->next, curr);
 
 out:
 	prf_unlock(flags);
