@@ -24,6 +24,7 @@
 #include <linux/export.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/rculist.h>
 #include "pgo.h"
 
 /*
@@ -32,7 +33,6 @@
  * ensures that we don't try to serialize data that's only partially updated.
  */
 static DEFINE_SPINLOCK(pgo_lock);
-static int current_node;
 
 unsigned long prf_lock(void)
 {
@@ -49,30 +49,30 @@ void prf_unlock(unsigned long flags)
 }
 
 /*
- * Return a newly allocated profiling value node which contains the tracked
- * value by the value profiler.
- * Note: caller *must* hold pgo_lock.
+ * Return prf_object for the llvm_prf_data or NULL
+ * if we should not attempt any profiling.
  */
-static struct llvm_prf_value_node *allocate_node(struct llvm_prf_data *p,
-						 u32 index, u64 value)
+static struct prf_object *find_prf_object(struct llvm_prf_data *p)
 {
-	const int max_vnds =
-		prf_get_count(__llvm_prf_vnds_start, __llvm_prf_vnds_end,
-			      sizeof(struct llvm_prf_value_node));
+	struct prf_object *po = NULL;
+	struct llvm_prf_data *data_end;
 
-	/*
-	 * Check that p is within vmlinux __llvm_prf_data section.
-	 * If not, don't allocate since we can't handle modules yet.
-	 */
-	if (!memory_contains(__llvm_prf_data_start, __llvm_prf_data_end, p,
-			     sizeof(*p)))
-		return NULL;
+	rcu_read_lock();
+	list_for_each_entry_rcu(po, &prf_list, link) {
+		/*
+		 * Check that p is within:
+		 * [po->data, po->data + prf_data_count(po)] section.
+		 */
+		data_end = po->data + prf_data_count(po);
+		if (memory_contains(po->data, data_end, p, sizeof(*p)))
+			goto found;
+	}
+	/* not found */
+	po = NULL;
 
-	if (WARN_ON_ONCE(current_node >= max_vnds))
-		return NULL; /* Out of nodes */
-
-	/* reserve vnode for vmlinux */
-	return &__llvm_prf_vnds_start[current_node++];
+found:
+	rcu_read_unlock();
+	return po;
 }
 
 /*
@@ -88,11 +88,15 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 	struct llvm_prf_value_node *curr;
 	struct llvm_prf_value_node *min = NULL;
 	struct llvm_prf_value_node *prev = NULL;
+	struct prf_object *po;
 	u64 min_count = U64_MAX;
 	u8 values = 0;
 	unsigned long flags;
 
-	if (!p || !p->values)
+	/* Get prf_object */
+	po = find_prf_object(p);
+
+	if (!po || !p || !p->values)
 		return;
 
 	counters = (struct llvm_prf_value_node **)p->values;
@@ -126,9 +130,11 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 	/* Lock when updating the value node structure. */
 	flags = prf_lock();
 
-	curr = allocate_node(p, index, target_value);
-	if (!curr)
-		goto out;
+	if (WARN_ON_ONCE(po->current_node >= prf_vnds_count(po)))
+		goto out; /* Out of nodes */
+
+	/* reserve the vnode */
+	curr = &po->vnds[po->current_node++];
 
 	curr->value = target_value;
 	curr->count++;
