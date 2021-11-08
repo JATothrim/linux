@@ -43,6 +43,11 @@ unsigned long prf_lock(void)
 	return flags;
 }
 
+int prf_trylock(unsigned long *flags)
+{
+	return spin_trylock_irqsave(&pgo_lock, *flags);
+}
+
 void prf_unlock(unsigned long flags)
 {
 	spin_unlock_irqrestore(&pgo_lock, flags);
@@ -127,8 +132,12 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 		return;
 	}
 
-	/* Lock when updating the value node structure. */
-	flags = prf_lock();
+    /*
+     * Lock when updating the value node structure.
+     * Try lock must be used here so that we don't deadlock.
+     */
+	if (!prf_trylock(&flags))
+		return;
 
 	if (WARN_ON_ONCE(po->current_node >= prf_vnds_count(po)))
 		goto out; /* Out of nodes */

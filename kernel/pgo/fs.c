@@ -451,17 +451,23 @@ static void pgo_module_init(struct module *mod)
 			      (char *)mod->prf_names + mod->prf_names_size,
 			      sizeof(po->names[0]));
 
-	po->vnds = mod->prf_vnds;
 	po->vnds_num = prf_get_count(mod->prf_vnds,
 				     (char *)mod->prf_vnds + mod->prf_vnds_size,
 				     sizeof(po->vnds[0]));
+
+	/* FIXME: The mod->prf_vnds "__llvm_prf_vnds" section is not usable? */
+	po->vnds = kcalloc(po->vnds_num, sizeof(po->vnds[0]), GFP_KERNEL);
+	if (WARN_ON(!po->vnds)) {
+		kfree(po)
+		return;
+	}
+
 
 	/* Create debugfs entry. */
 	po->file = debugfs_create_file(fname, 0600, directory, po, &prf_fops);
 	if (!po->file) {
 		pr_err("Failed to setup module pgo: %s", fname);
 		kfree(po);
-
 
 	} else {
 		/* Finally enable profiling for the module. */
@@ -479,11 +485,18 @@ static int pgo_module_notifier(struct notifier_block *nb, unsigned long event,
 	unsigned long flags;
 
 	if (event == MODULE_STATE_LIVE) {
-		/* Does the module have profiling info? */
-		if (mod->prf_data && mod->prf_cnts && mod->prf_names &&
-		    mod->prf_vnds) {
+		/* Can we enable profiling for the module? */
+		if (mod->prf_data
+			&& mod->prf_cnts
+			&& mod->prf_names
+			&& mod->prf_vnds
+			&& mod->prf_vnds_size > 0) {
 			/* Setup module profiling. */
 			pgo_module_init(mod);
+
+			pr_info("%s: Profiling active.", mod->name);
+		} else {
+			pr_warn("%s: Profiling disabled.", mod->name);
 		}
 	}
 
@@ -511,6 +524,7 @@ out_unlock:
 			po->file = NULL;
 
 			/* Cleanup memory. */
+			kfree(po->vnds);
 			kfree_rcu(po, rcu);
 		}
 	}

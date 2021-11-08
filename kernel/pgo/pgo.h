@@ -177,7 +177,7 @@ void __llvm_profile_instrument_memop(u64 target_value, void *data,
 				     u32 counter_index);
 
 /*
- * profiler object:
+ * struct prf_object - profiler object:
  * maintain profiler internal state
  * of vmlinux or any instrumented module.
  */
