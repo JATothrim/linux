@@ -79,7 +79,7 @@ static struct llvm_prf_value_node *allocate_node(struct llvm_prf_data *p,
  * Records the target value for the index if not seen before. Otherwise,
  * increments the counter associated w/ the target value.
  */
-void __llvm_profile_instrument_target(u64 target_value, void *data, u32 index)
+void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 index)
 {
 	struct llvm_prf_data *p = (struct llvm_prf_data *)data;
 	struct llvm_prf_value_node **counters;
