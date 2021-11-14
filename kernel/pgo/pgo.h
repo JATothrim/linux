@@ -20,7 +20,7 @@
 #define _PGO_H
 
 #include <linux/rculist.h>
-
+#include <linux/percpu.h>
 /*
  * Note: These internal LLVM definitions must match the compiler version.
  * See llvm/include/llvm/ProfileData/InstrProfData.inc in LLVM's source code.
@@ -177,6 +177,15 @@ void __llvm_profile_instrument_memop(u64 target_value, void *data,
 				     u32 counter_index);
 
 /*
+ * struct prf_object_pcpu - per cpu prf_object data.
+ */
+struct prf_object_pcpu {
+	struct llvm_prf_data *data;
+	struct llvm_prf_value_node *vnds;
+	int curr_node;
+};
+
+/*
  * struct prf_object - profiler object:
  * maintain profiler internal state
  * of vmlinux or any instrumented module.
@@ -195,16 +204,16 @@ struct prf_object {
 	/* debugfs file of this profile data set */
 	struct dentry *file;
 
-	int current_node;
-
 	struct llvm_prf_data *data;
 	int data_num;
 	u64 *cnts;
 	int cnts_num;
 	const char *names;
 	int names_num;
-	struct llvm_prf_value_node *vnds;
 	int vnds_num;
+
+	/* percpu versions of data and vnds */
+	struct prf_object_pcpu *pcpu;
 };
 
 /*
@@ -230,7 +239,7 @@ extern struct list_head prf_list;
 __DEFINE_PRF_OBJ_SIZE(data);
 __DEFINE_PRF_OBJ_SIZE(cnts);
 __DEFINE_PRF_OBJ_SIZE(names);
-__DEFINE_PRF_OBJ_SIZE(vnds);
+/* __DEFINE_PRF_OBJ_SIZE(vnds); */
 
 #undef __DEFINE_PRF_OBJ_SIZE
 
@@ -242,6 +251,15 @@ static inline unsigned int prf_get_count(const void *_start, const void *_end,
 	unsigned long end = (unsigned long)_end;
 
 	return roundup(end - start, objsize) / objsize;
+}
+
+static inline unsigned int prf_get_index(const void *_start, const void *_end,
+	unsigned int objsize)
+{
+	unsigned long start = (unsigned long)_start;
+	unsigned long end =	(unsigned long)_end;
+
+	return (end - start) / objsize;
 }
 
 #endif /* _PGO_H */

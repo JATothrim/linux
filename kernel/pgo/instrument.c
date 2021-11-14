@@ -94,8 +94,11 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 	struct llvm_prf_value_node *min = NULL;
 	struct llvm_prf_value_node *prev = NULL;
 	struct prf_object *po;
+	struct prf_object_pcpu *pcpu;
 	u64 min_count = U64_MAX;
 	u8 values = 0;
+	int cpu;
+	int offset;
 	unsigned long flags;
 
 	/* Get prf_object */
@@ -104,13 +107,21 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 	if (!po || !p || !p->values)
 		return;
 
-	counters = (struct llvm_prf_value_node **)p->values;
+	/* get index to p within po->pcpu[].data */
+	offset = prf_get_index(po->data, data, sizeof(*p));
+
+	/* get prf_object_pcpu data. */
+	preempt_disable();
+	cpu = smp_processor_id();
+	pcpu = &po->pcpu[cpu];
+
+	counters = (struct llvm_prf_value_node **)pcpu->data[offset].values;
 	curr = READ_ONCE(counters[index]);
 
 	while (curr) {
 		if (target_value == curr->value) {
 			curr->count++;
-			return;
+			goto out;
 		}
 
 		if (curr->count < min_count) {
@@ -129,21 +140,16 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 			curr->value = target_value;
 			curr->count++;
 		}
-		return;
+		goto out;
 	}
 
-    /*
-     * Lock when updating the value node structure.
-     * Try lock must be used here so that we don't deadlock.
-     */
-	if (!prf_trylock(&flags))
-		return;
-
-	if (WARN_ON_ONCE(po->current_node >= prf_vnds_count(po)))
+	if (WARN_ON_ONCE(pcpu->curr_node >= po->vnds_num))
 		goto out; /* Out of nodes */
 
+	local_irq_save(flags);
+
 	/* reserve the vnode */
-	curr = &po->vnds[po->current_node++];
+	curr = &pcpu->vnds[pcpu->curr_node++];
 
 	curr->value = target_value;
 	curr->count++;
@@ -153,8 +159,9 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 	else if (prev && !prev->next)
 		WRITE_ONCE(prev->next, curr);
 
+	local_irq_restore(flags);
 out:
-	prf_unlock(flags);
+	preempt_enable_no_resched();
 }
 EXPORT_SYMBOL(__llvm_profile_instrument_target);
 

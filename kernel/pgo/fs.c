@@ -162,9 +162,9 @@ static u32 prf_get_value_size(struct prf_object *po)
 {
 	u32 size = 0;
 	struct llvm_prf_data *p;
-	struct llvm_prf_data *end = po->data + po->data_num;
+	struct llvm_prf_data *end = po->pcpu[0].data + po->data_num;
 
-	for (p = po->data; p < end; p++)
+	for (p = po->pcpu[0].data; p < end; p++)
 		size += __prf_get_value_size(p, NULL);
 
 	return size;
@@ -235,9 +235,9 @@ static void prf_serialize_value(struct llvm_prf_data *p, void **buffer)
 static void prf_serialize_values(struct prf_object *po, void **buffer)
 {
 	struct llvm_prf_data *p;
-	struct llvm_prf_data *end = po->data + po->data_num;
+	struct llvm_prf_data *end = po->pcpu[0].data + po->data_num;
 
-	for (p = po->data; p < end; p++)
+	for (p = po->pcpu[0].data; p < end; p++)
 		prf_serialize_value(p, buffer);
 }
 
@@ -276,7 +276,7 @@ static int prf_serialize(struct prf_object *po, struct prf_private_data *p,
 	buffer = p->buffer;
 
 	prf_fill_header(po, &buffer);
-	prf_copy_to_buffer(&buffer, po->data, prf_data_size(po));
+	prf_copy_to_buffer(&buffer, po->pcpu[0].data, prf_data_size(po));
 	prf_copy_to_buffer(&buffer, po->cnts, prf_cnts_size(po));
 	prf_copy_to_buffer(&buffer, po->names, prf_names_size(po));
 	buffer += prf_get_padding(prf_names_size(po));
@@ -418,6 +418,44 @@ static const struct file_operations prf_reset_fops = {
 	.llseek = noop_llseek,
 };
 
+/* Take prf_object and reserve ->pcpu for it */
+static struct prf_object_pcpu *pgo_percpu_init(struct prf_object *po)
+{
+	int cpu;
+	struct prf_object_pcpu *pcpu;
+
+	/* alloc percpu structures */
+	pcpu = kcalloc(num_possible_cpus(), sizeof(po->pcpu[0]), GFP_KERNEL);
+	if (!pcpu)
+		goto err_free;
+
+	for_each_possible_cpu(cpu) {
+		/* init per-cpu __llvm_prf_data data. */
+		pcpu[cpu].data =
+			kmemdup(po->data, sizeof(po->data[0]) * po->data_num, GFP_KERNEL);
+		if (!pcpu[cpu].data)
+			goto err_free;
+
+		/* alloc per-cpu __llvm_prf_vnds memory */
+		pcpu[cpu].vnds =
+			kcalloc(po->vnds_num, sizeof(*pcpu[cpu].vnds), GFP_KERNEL);
+		if (!pcpu[cpu].vnds)
+			goto err_free;
+	}
+	return pcpu;
+
+err_free:
+	/* free pcpu array */
+	if (pcpu) {
+		for_each_possible_cpu(cpu) {
+			kfree(pcpu[cpu].data);
+			kfree(pcpu[cpu].vnds);
+		}
+	}
+	kfree(pcpu);
+	return NULL;
+}
+
 static void pgo_module_init(struct module *mod)
 {
 	struct prf_object *po;
@@ -434,7 +472,7 @@ static void pgo_module_init(struct module *mod)
 	fname[0] = 0;
 	snprintf(fname, sizeof(fname), "%s.profraw", po->mod_name);
 
-	/* Setup prf_object sections. */
+	/* Setup prf_object instance. */
 	po->data = mod->prf_data;
 	po->data_num = prf_get_count(mod->prf_data,
 				     (char *)mod->prf_data + mod->prf_data_size,
@@ -453,28 +491,28 @@ static void pgo_module_init(struct module *mod)
 
 	po->vnds_num = prf_get_count(mod->prf_vnds,
 				     (char *)mod->prf_vnds + mod->prf_vnds_size,
-				     sizeof(po->vnds[0]));
+				     sizeof(struct llvm_prf_value_node));
 
-	/* FIXME: The mod->prf_vnds "__llvm_prf_vnds" section is not usable? */
-	po->vnds = kcalloc(po->vnds_num, sizeof(po->vnds[0]), GFP_KERNEL);
-	if (WARN_ON(!po->vnds)) {
-		kfree(po)
-		return;
-	}
-
+	/* alloc percpu structures */
+	po->pcpu = pgo_percpu_init(po);
+	if (!po->pcpu)
+		goto err_free;
 
 	/* Create debugfs entry. */
 	po->file = debugfs_create_file(fname, 0600, directory, po, &prf_fops);
 	if (!po->file) {
 		pr_err("Failed to setup module pgo: %s", fname);
-		kfree(po);
-
+		goto err_free;
 	} else {
 		/* Finally enable profiling for the module. */
 		flags = prf_list_lock();
 		list_add_tail_rcu(&po->link, &prf_list);
 		prf_list_unlock(flags);
 	}
+	return;
+
+err_free:
+	kfree(po);
 }
 
 static int pgo_module_notifier(struct notifier_block *nb, unsigned long event,
@@ -486,11 +524,8 @@ static int pgo_module_notifier(struct notifier_block *nb, unsigned long event,
 
 	if (event == MODULE_STATE_LIVE) {
 		/* Can we enable profiling for the module? */
-		if (mod->prf_data
-			&& mod->prf_cnts
-			&& mod->prf_names
-			&& mod->prf_vnds
-			&& mod->prf_vnds_size > 0) {
+		if (mod->prf_data && mod->prf_cnts && mod->prf_names &&
+		    mod->prf_vnds && mod->prf_vnds_size > 0) {
 			/* Setup module profiling. */
 			pgo_module_init(mod);
 
@@ -524,7 +559,6 @@ out_unlock:
 			po->file = NULL;
 
 			/* Cleanup memory. */
-			kfree(po->vnds);
 			kfree_rcu(po, rcu);
 		}
 	}
@@ -557,10 +591,12 @@ static int __init pgo_init(void)
 		prf_get_count(__llvm_prf_names_start, __llvm_prf_names_end,
 			      sizeof(__llvm_prf_names_start[0]));
 
-	prf_vmlinux.vnds = __llvm_prf_vnds_start;
 	prf_vmlinux.vnds_num =
 		prf_get_count(__llvm_prf_vnds_start, __llvm_prf_vnds_end,
 			      sizeof(__llvm_prf_vnds_start[0]));
+
+	prf_vmlinux.pcpu = pgo_percpu_init(&prf_vmlinux);
+
 	/* Enable profiling. */
 	flags = prf_list_lock();
 	prf_vmlinux.mod_name = "vmlinux";
