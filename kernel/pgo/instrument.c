@@ -16,7 +16,7 @@
  *
  */
 
-#define pr_fmt(fmt)	"pgo: " fmt
+#define pr_fmt(fmt) "pgo: " fmt
 
 #include <asm/sections.h>
 #include <linux/bitops.h>
@@ -62,8 +62,8 @@ static struct llvm_prf_value_node *allocate_node(struct llvm_prf_data *p,
 	 * Check that p is within vmlinux __llvm_prf_data section.
 	 * If not, don't allocate since we can't handle modules yet.
 	 */
-	if (!memory_contains(__llvm_prf_data_start,
-		__llvm_prf_data_end, p, sizeof(*p)))
+	if (!memory_contains(__llvm_prf_data_start, __llvm_prf_data_end, p,
+			     sizeof(*p)))
 		return NULL;
 
 	if (WARN_ON_ONCE(current_node >= max_vnds))
@@ -142,9 +142,9 @@ out:
 EXPORT_SYMBOL(__llvm_profile_instrument_target);
 
 /* Counts the number of times a range of targets values are seen. */
-void __llvm_profile_instrument_range(u64 target_value, void *data,
-				     u32 index, s64 precise_start,
-				     s64 precise_last, s64 large_value)
+void __llvm_profile_instrument_range(u64 target_value, void *data, u32 index,
+				     s64 precise_start, s64 precise_last,
+				     s64 large_value)
 {
 	if (large_value != S64_MIN && (s64)target_value >= large_value)
 		target_value = large_value;

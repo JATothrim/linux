@@ -24,33 +24,21 @@
  * See llvm/include/llvm/ProfileData/InstrProfData.inc in LLVM's source code.
  */
 
-#define LLVM_INSTR_PROF_RAW_MAGIC_64	\
-		((u64)255 << 56 |	\
-		 (u64)'l' << 48 |	\
-		 (u64)'p' << 40 |	\
-		 (u64)'r' << 32 |	\
-		 (u64)'o' << 24 |	\
-		 (u64)'f' << 16 |	\
-		 (u64)'r' << 8  |	\
-		 (u64)129)
-#define LLVM_INSTR_PROF_RAW_MAGIC_32	\
-		((u64)255 << 56 |	\
-		 (u64)'l' << 48 |	\
-		 (u64)'p' << 40 |	\
-		 (u64)'r' << 32 |	\
-		 (u64)'o' << 24 |	\
-		 (u64)'f' << 16 |	\
-		 (u64)'R' << 8  |	\
-		 (u64)129)
+#define LLVM_INSTR_PROF_RAW_MAGIC_64                                           \
+	((u64)255 << 56 | (u64)'l' << 48 | (u64)'p' << 40 | (u64)'r' << 32 |   \
+	 (u64)'o' << 24 | (u64)'f' << 16 | (u64)'r' << 8 | (u64)129)
+#define LLVM_INSTR_PROF_RAW_MAGIC_32                                           \
+	((u64)255 << 56 | (u64)'l' << 48 | (u64)'p' << 40 | (u64)'r' << 32 |   \
+	 (u64)'o' << 24 | (u64)'f' << 16 | (u64)'R' << 8 | (u64)129)
 
 #define LLVM_INSTR_PROF_RAW_VERSION 7
-#define LLVM_INSTR_PROF_DATA_ALIGNMENT		8
-#define LLVM_INSTR_PROF_IPVK_FIRST		0
-#define LLVM_INSTR_PROF_IPVK_LAST		1
-#define LLVM_INSTR_PROF_MAX_NUM_VAL_PER_SITE	255
+#define LLVM_INSTR_PROF_DATA_ALIGNMENT 8
+#define LLVM_INSTR_PROF_IPVK_FIRST 0
+#define LLVM_INSTR_PROF_IPVK_LAST 1
+#define LLVM_INSTR_PROF_MAX_NUM_VAL_PER_SITE 255
 
-#define LLVM_VARIANT_MASK_IR_PROF	(0x1ULL << 56)
-#define LLVM_VARIANT_MASK_CSIR_PROF	(0x1ULL << 57)
+#define LLVM_VARIANT_MASK_IR_PROF (0x1ULL << 56)
+#define LLVM_VARIANT_MASK_CSIR_PROF (0x1ULL << 57)
 
 /**
  * struct llvm_prf_header - represents the raw profile header data structure.
@@ -154,12 +142,11 @@ struct llvm_prf_value_record {
 	u8 site_count_array[];
 };
 
-#define prf_get_value_record_header_size()		\
+#define prf_get_value_record_header_size()                                     \
 	offsetof(struct llvm_prf_value_record, site_count_array)
-#define prf_get_value_record_site_count_size(sites)	\
-	roundup((sites), 8)
-#define prf_get_value_record_size(sites)		\
-	(prf_get_value_record_header_size() +		\
+#define prf_get_value_record_site_count_size(sites) roundup((sites), 8)
+#define prf_get_value_record_size(sites)                                       \
+	(prf_get_value_record_header_size() +                                  \
 	 prf_get_value_record_site_count_size((sites)))
 
 /* Data sections */
@@ -181,26 +168,23 @@ extern void prf_unlock(unsigned long flags);
 
 /* Declarations for LLVM instrumentation. */
 void __llvm_profile_instrument_target(u64 target_value, void *data, u32 index);
-void __llvm_profile_instrument_range(u64 target_value, void *data,
-				     u32 index, s64 precise_start,
-				     s64 precise_last, s64 large_value);
+void __llvm_profile_instrument_range(u64 target_value, void *data, u32 index,
+				     s64 precise_start, s64 precise_last,
+				     s64 large_value);
 void __llvm_profile_instrument_memop(u64 target_value, void *data,
 				     u32 counter_index);
 
-#define __DEFINE_PRF_SIZE(s) \
-	static inline unsigned long prf_ ## s ## _size(void)		\
-	{								\
-		unsigned long start =					\
-			(unsigned long)__llvm_prf_ ## s ## _start;	\
-		unsigned long end =					\
-			(unsigned long)__llvm_prf_ ## s ## _end;	\
-		return roundup(end - start,				\
-				sizeof(__llvm_prf_ ## s ## _start[0]));	\
-	}								\
-	static inline unsigned long prf_ ## s ## _count(void)		\
-	{								\
-		return prf_ ## s ## _size() /				\
-			sizeof(__llvm_prf_ ## s ## _start[0]);		\
+#define __DEFINE_PRF_SIZE(s)                                                   \
+	static inline unsigned long prf_##s##_size(void)                       \
+	{                                                                      \
+		unsigned long start = (unsigned long)__llvm_prf_##s##_start;   \
+		unsigned long end = (unsigned long)__llvm_prf_##s##_end;       \
+		return roundup(end - start,                                    \
+			       sizeof(__llvm_prf_##s##_start[0]));             \
+	}                                                                      \
+	static inline unsigned long prf_##s##_count(void)                      \
+	{                                                                      \
+		return prf_##s##_size() / sizeof(__llvm_prf_##s##_start[0]);   \
 	}
 
 __DEFINE_PRF_SIZE(data);

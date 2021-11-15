@@ -16,7 +16,7 @@
  *
  */
 
-#define pr_fmt(fmt)	"pgo: " fmt
+#define pr_fmt(fmt) "pgo: " fmt
 
 #include <linux/kernel.h>
 #include <linux/debugfs.h>
@@ -60,7 +60,8 @@ static void prf_fill_header(void **buffer)
 #else
 	header->magic = LLVM_INSTR_PROF_RAW_MAGIC_32;
 #endif
-	header->version = LLVM_VARIANT_MASK_IR_PROF | LLVM_INSTR_PROF_RAW_VERSION;
+	header->version =
+		LLVM_VARIANT_MASK_IR_PROF | LLVM_INSTR_PROF_RAW_VERSION;
 	header->data_size = prf_data_count();
 	header->binary_ids_size = 0;
 	header->padding_bytes_before_counters = 0;
@@ -114,8 +115,7 @@ static u32 __prf_get_value_size(struct llvm_prf_data *p, u32 *value_kinds)
 			while (site && ++count <= U8_MAX)
 				site = site->next;
 
-			size += count *
-				sizeof(struct llvm_prf_value_node_data);
+			size += count * sizeof(struct llvm_prf_value_node_data);
 		}
 
 		s += sites;
@@ -190,8 +190,9 @@ static void prf_serialize_value(struct llvm_prf_data *p, void **buffer)
 			struct llvm_prf_value_node *site = nodes[s + n];
 
 			while (site && ++count <= U8_MAX) {
-				prf_copy_to_buffer(buffer, site,
-						   sizeof(struct llvm_prf_value_node_data));
+				prf_copy_to_buffer(
+					buffer, site,
+					sizeof(struct llvm_prf_value_node_data));
 				site = site->next;
 			}
 
@@ -218,12 +219,9 @@ static inline unsigned long prf_get_padding(unsigned long size)
 /* Note: caller *must* hold pgo_lock */
 static unsigned long prf_buffer_size(void)
 {
-	return sizeof(struct llvm_prf_header) +
-			prf_data_size()	+
-			prf_cnts_size() +
-			prf_names_size() +
-			prf_get_padding(prf_names_size()) +
-			prf_get_value_size();
+	return sizeof(struct llvm_prf_header) + prf_data_size() +
+	       prf_cnts_size() + prf_names_size() +
+	       prf_get_padding(prf_names_size()) + prf_get_value_size();
 }
 
 /*
@@ -247,8 +245,8 @@ static int prf_serialize(struct prf_private_data *p, size_t buf_size)
 	buffer = p->buffer;
 
 	prf_fill_header(&buffer);
-	prf_copy_to_buffer(&buffer, __llvm_prf_data_start,  prf_data_size());
-	prf_copy_to_buffer(&buffer, __llvm_prf_cnts_start,  prf_cnts_size());
+	prf_copy_to_buffer(&buffer, __llvm_prf_data_start, prf_data_size());
+	prf_copy_to_buffer(&buffer, __llvm_prf_cnts_start, prf_cnts_size());
 	prf_copy_to_buffer(&buffer, __llvm_prf_names_start, prf_names_size());
 	buffer += prf_get_padding(prf_names_size());
 
@@ -333,13 +331,11 @@ static int prf_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static const struct file_operations prf_fops = {
-	.owner		= THIS_MODULE,
-	.open		= prf_open,
-	.read		= prf_read,
-	.llseek		= default_llseek,
-	.release	= prf_release
-};
+static const struct file_operations prf_fops = { .owner = THIS_MODULE,
+						 .open = prf_open,
+						 .read = prf_read,
+						 .llseek = default_llseek,
+						 .release = prf_release };
 
 /* write() implementation for resetting PGO's profile data. */
 static ssize_t reset_write(struct file *file, const char __user *addr,
@@ -360,7 +356,8 @@ static ssize_t reset_write(struct file *file, const char __user *addr,
 		current_vsite_count = 0;
 		vnodes = (struct llvm_prf_value_node **)data->values;
 
-		for (i = LLVM_INSTR_PROF_IPVK_FIRST; i <= LLVM_INSTR_PROF_IPVK_LAST; i++)
+		for (i = LLVM_INSTR_PROF_IPVK_FIRST;
+		     i <= LLVM_INSTR_PROF_IPVK_LAST; i++)
 			current_vsite_count += data->num_value_sites[i];
 
 		for (i = 0; i < current_vsite_count; i++) {
@@ -377,9 +374,9 @@ static ssize_t reset_write(struct file *file, const char __user *addr,
 }
 
 static const struct file_operations prf_reset_fops = {
-	.owner		= THIS_MODULE,
-	.write		= reset_write,
-	.llseek		= noop_llseek,
+	.owner = THIS_MODULE,
+	.write = reset_write,
+	.llseek = noop_llseek,
 };
 
 /* Create debugfs entries. */
