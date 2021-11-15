@@ -183,6 +183,11 @@ struct prf_object_pcpu {
 	struct llvm_prf_data *data;
 	struct llvm_prf_value_node *vnds;
 	int curr_node;
+
+	/* debugfs file of this profile data set */
+	int cpu;
+	struct dentry *file;
+	struct prf_object *parent;
 };
 
 /*
@@ -200,9 +205,6 @@ struct prf_object {
 	 * or "vmlinux"
 	 */
 	const char *mod_name;
-
-	/* debugfs file of this profile data set */
-	struct dentry *file;
 
 	struct llvm_prf_data *data;
 	int data_num;

@@ -143,6 +143,10 @@ void noinstr __llvm_profile_instrument_target(u64 target_value, void *data, u32 
 		goto out;
 	}
 
+    /*
+     * The per-cpu profiling relives us from any mutual locking here
+     * since the profiling data structure is duplicated for each core.
+     */
 	if (WARN_ON_ONCE(pcpu->curr_node >= po->vnds_num))
 		goto out; /* Out of nodes */
 
