@@ -6,7 +6,7 @@ Using PGO with the Linux kernel
 
 Clang's profiling kernel support (PGO_) enables profiling of the Linux kernel
 when building with Clang. The profiling data is exported via the ``pgo``
-debugfs directory.
+debugfs directory. Clang version of 13 or greater is required.
 
 .. _PGO: https://clang.llvm.org/docs/UsersManual.html#profile-guided-optimization
 
@@ -22,7 +22,8 @@ Configure the kernel with:
    CONFIG_PGO_CLANG=y
 
 Note that kernels compiled with profiling flags will be significantly larger
-and run slower.
+and run slower. This overhead applies only to the instrumented kernel and when
+building the optimized kernel the PGO_CLANG must be disabled.
 
 Profiling data will only become accessible once debugfs has been mounted:
 
@@ -64,7 +65,6 @@ and
 Only files which are linked to the main kernel image or are compiled as kernel
 modules are supported by this mechanism.
 
-
 Files
 =====
 
@@ -75,9 +75,33 @@ The PGO kernel support creates the following files in debugfs:
 
 ``/sys/kernel/debug/pgo/reset``
 	Global reset file: resets all coverage data to zero when written to.
+	(TODO: this is not currently implemented)
 
-``/sys/kernel/debug/pgo/vmlinux.profraw``
+``/sys/kernel/debug/pgo/*.profraw``
 	The raw PGO data that must be processed with ``llvm_profdata``.
+	The builtin kernel PGO data is provided by ``vmlinux.*.profraw``.
+
+Instrumentation notes
+=====================
+
+The profile data is exported for each module and online cpu:
+``pgo/vmlinux.0.profraw``
+	CPU0 profile data of vmlinux
+
+``pgo/ext4.1.profraw``
+	CPU1 profile data of the ext4 module.
+
+Some modules don't provide enough information for profiling:
+this results in no profile data being exported in debugfs.
+The profiler notes this via "pgo: <module name> Disabled" message.
+The PGO_PROFILE should be disabled for such code/modules.
+
+The "Edge profiler" data is shared between all CPUs and
+this part of the profile data produces same data on all CPUs.
+The "IndirectCall profile" and "MemOP profile" part of the profile data
+however is unique to each CPU.
+
+Because of this all per-cpu profile data sets should always be merged.
 
 
 Workflow
@@ -119,6 +143,17 @@ using the result to optimize the kernel:
       $ llvm-profdata merge --output=vmlinux.profdata vmlinux.profraw
 
    Note that multiple raw profile data files can be merged during this step.
+
+   An useful processing step here is to mark final the profile data sparse:
+
+   .. code-block:: sh
+
+      $ llvm-profdata merge -sparse=true --output=vmlinux.profdata vmlinux.profraw
+
+   This drops all function records with 0 execution count and prevents compiler
+   from assuming such code is never executed. Making the profile data sparse
+   is highly encouraged because if previously unused module/code is run
+   in the optimized kernel the compiler could have mis-optimized such code.
 
 7) Rebuild the kernel using the processed profile data (PGO disabled)
 
